@@ -48,7 +48,7 @@ No prompt. No copy-paste. No one needing to remember.
 
 Here's what the Automation Layer Adviser recommendation looks like on a real Jira ticket:
 
-![Automation Layer Adviser Jira comment - real example](https://github.com/aastha0208/test-strategy-adviser/raw/main/docs/example-recommendation.png)
+![Automation Layer Adviser Jira comment - real example](https://github.com/aastha0208/test-strategy-adviser/blob/main/JIRA%20example%20with%20Test%20Adviser.png)
 
 **What you see in the comment:**
 
