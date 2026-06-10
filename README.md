@@ -1,6 +1,6 @@
 # Automation Layer Adviser
 
-A Claude Code-powered GitHub Actions workflow that analyses Jira tickets and recommends the correct test automation layer — automatically, every time a ticket is ready to be worked on.
+A Claude Code-powered GitHub Actions workflow that analyses Jira tickets and recommends the correct test automation layers automatically, every time a ticket is ready to be worked on.
 
 > **Shift-left automation decisions with AI.** When a Jira ticket reaches Ready, Claude analyzes it and recommends the exact test layer to automate—posted as a comment, grounded in your team's framework, with no manual intervention required.
 
@@ -10,15 +10,15 @@ A Claude Code-powered GitHub Actions workflow that analyses Jira tickets and rec
 
 When does your team decide what layer to automate a ticket at?
 
-Usually during development. Usually inconsistently, depending on who picks up the ticket. And with no shared record of the reasoning.
+Usually during development or after the fact. Usually inconsistent, depending on who picks up the ticket. And with no shared record of the reasoning.
 
-That's a timing problem and an information problem. Automation decisions made mid-sprint are harder to act on, harder to review, and harder to learn from.
+That is a timing and an information problem. Automation decisions made mid-sprint are harder to act on, harder to review, and harder to learn from.
 
 ## The insight
 
 Most teams pick test layers during dev (too late), inconsistently (depends on who picks up the ticket), and with no audit trail (hard to learn from decisions).
 
-**This tool shifts that decision left to Ready state** — when the team can discuss it before coding starts, grounding every choice in the same framework regardless of who picks up the ticket.
+**This tool shifts that decision left to Ready state** — when the team can discuss it before coding starts, grounding every choice in the same framework regardless of who picks up the ticket across teams.
 
 ---
 
@@ -36,7 +36,7 @@ Most teams pick test layers during dev (too late), inconsistently (depends on wh
 
 When a Jira ticket transitions to Ready, this workflow fires automatically:
 
-1. Reads the ticket — summary, description, acceptance criteria, components, labels
+1. Reads the ticket: summary, description, acceptance criteria, components, labels
 2. Applies a structured five-step decision framework using Claude
 3. Posts a formatted recommendation directly as a comment on the Jira ticket
 4. Updates the "Automation Required" field on the ticket based on the recommendation
