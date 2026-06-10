@@ -1,0 +1,91 @@
+name: "Test Strategy Adviser"
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_key:
+        description: "Jira issue key (e.g. PROJ-123)"
+        required: true
+      summary:
+        description: "Issue summary"
+        required: true
+      issue_type:
+        description: "Issue type"
+        required: true
+      components:
+        description: "Components"
+        required: false
+        default: ""
+      labels:
+        description: "Labels"
+        required: false
+        default: ""
+      team:
+        description: "Team name"
+        required: false
+        default: ""
+      description:
+        description: "Issue description"
+        required: false
+        default: ""
+      acceptance_criteria:
+        description: "Acceptance criteria"
+        required: false
+        default: ""
+      implementation_notes:
+        description: "Implementation notes"
+        required: false
+        default: ""
+
+jobs:
+  advise:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Generate recommendation
+        id: advise
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --model claude-sonnet-4-6
+            --max-turns 5
+          prompt: |
+            You are an Automation Layer Adviser for a software engineering team.
+
+            Analyse this Jira ticket and recommend the correct test automation layer.
+
+            Ticket: ${{ github.event.inputs.issue_key }} — ${{ github.event.inputs.issue_type }}
+            Team: ${{ github.event.inputs.team }}
+            Summary: ${{ github.event.inputs.summary }}
+            Components: ${{ github.event.inputs.components }}
+            Labels: ${{ github.event.inputs.labels }}
+            Description: ${{ github.event.inputs.description }}
+            Acceptance criteria: ${{ github.event.inputs.acceptance_criteria }}
+            Implementation notes: ${{ github.event.inputs.implementation_notes }}
+
+            Apply this decision framework — stop at the first matching layer:
+
+            DECISION FLOW (apply in order, stop at first YES):
+            1. Can a unit test cover it? Pure logic, no live dependencies -> UNIT
+            2. Does it need real service wiring or real DB queries? -> INTEGRATION
+            3. Is it a full customer journey spanning multiple systems or requiring a real client? -> BACKEND_E2E or UI_E2E
+            4. Is it frontend rendering or component state in isolation? -> COMPONENT
+            5. Does it require real hardware, real external directory service, or human judgment? -> MANUAL
+
+            Always prefer the lowest layer that applies.
+
+            Provide a JSON object with the fields:
+            primary_layer, primary_rationale, decision_chain, unit_tests, automate, manual, deferred, supporting, skip.
+
+            Use the Bash tool to run this exact command and nothing else:
+            echo 'JSON_OUTPUT_START'
+            echo '{"primary_layer":"LAYER","primary_rationale":"...","decision_chain":["..."],"unit_tests":["..."],"automate":["..."],"manual":["..."],"deferred":"...","supporting":"...","skip":"..."}'
+            echo 'JSON_OUTPUT_END'
+      - name: Print raw output
+        run: |
+          cat /home/runner/work/_temp/claude-execution-output.json || true
