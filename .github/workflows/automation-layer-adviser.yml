@@ -1,4 +1,25 @@
-name: "Test Strategy Adviser"
+name: "Automation Layer Adviser"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTOMATION LAYER ADVISER
+# A Claude Code-powered GitHub Actions workflow that analyses Jira tickets
+# and recommends the correct test automation layer.
+#
+# SETUP REQUIRED:
+# Add these secrets to your GitHub repo (Settings → Secrets → Actions):
+#   CLAUDE_CODE_OAUTH_TOKEN  — Anthropic Claude Code OAuth token
+#   JIRA_EMAIL               — Your Jira account email
+#   JIRA_API_TOKEN           — Your Jira API token
+#
+# OPTIONAL — JIRA AUTOMATION:
+# Trigger this workflow automatically by calling the GitHub Actions
+# workflow_dispatch API from a Jira automation rule on ticket transition.
+#
+# CONFIGURATION:
+# Update these values for your project:
+#   JIRA_BASE_URL            — Your Jira instance URL (line ~303)
+#   AUTOMATION_FIELD_ID      — Your "Automation Required" custom field ID (line ~337)
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   workflow_dispatch:
@@ -10,20 +31,20 @@ on:
         description: "Issue summary"
         required: true
       issue_type:
-        description: "Issue type"
+        description: "Issue type (Bug, Story, Task)"
         required: true
       components:
-        description: "Components"
+        description: "Components (comma separated)"
         required: false
-        default: ""
+        default: "None"
       labels:
-        description: "Labels"
+        description: "Labels (comma separated)"
         required: false
-        default: ""
+        default: "None"
       team:
         description: "Team name"
         required: false
-        default: ""
+        default: "Not specified"
       description:
         description: "Issue description"
         required: false
@@ -38,17 +59,22 @@ on:
         default: ""
 
 jobs:
-  advise:
+  layer-adviser:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: sudo apt-get install -y jq
+
       - name: Generate recommendation
-        id: advise
-        uses: anthropics/claude-code-action@v1
+        id: recommend
+        uses: anthropics/claude-code-action@5d0cc745cd0cce4c0e9e0b3511de26c3bc285eb5 # v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
           claude_args: |
@@ -73,19 +99,283 @@ jobs:
             DECISION FLOW (apply in order, stop at first YES):
             1. Can a unit test cover it? Pure logic, no live dependencies -> UNIT
             2. Does it need real service wiring or real DB queries? -> INTEGRATION
+               - If integration infrastructure does not exist yet: UNIT now + flag deferred coverage
             3. Is it a full customer journey spanning multiple systems or requiring a real client? -> BACKEND_E2E or UI_E2E
-            4. Is it frontend rendering or component state in isolation? -> COMPONENT
+            4. Is it frontend rendering or component state in isolation? -> COMPONENT (never UI_E2E)
             5. Does it require real hardware, real external directory service, or human judgment? -> MANUAL
 
-            Always prefer the lowest layer that applies.
+            INTEGRATION TEST PRINCIPLES:
+            - Replace infrastructure, not logic. Mock: message queues, feature flags, external vaults. Keep real: HTTP pipeline, DB, auth/authz
+            - Use a real test database (e.g. Testcontainers) for all data tests — never SQLite for seeded data
+            - Fire-and-forget async services must be mocked in the test factory
+            - Repo: src/<ServiceName>.IntegrationTests
 
-            Provide a JSON object with the fields:
-            primary_layer, primary_rationale, decision_chain, unit_tests, automate, manual, deferred, supporting, skip.
+            UI E2E PRINCIPLES:
+            - ONLY use UI_E2E for true end-to-end customer journeys — not for rendering bugs or single-service checks
+            - Preconditions (users, groups, data not under test) must use API calls not UI navigation
+            - Each test case should reference a tracking ticket
+            - Repo: tests/ui-e2e/
+
+            BACKEND E2E PRINCIPLES:
+            - Full API flows, real external dependencies
+            - Each test must be fully independent — no cross-test state
+            - Repo: tests/backend-e2e/
+
+            TEST LAYERS (always default to lowest appropriate):
+            - UNIT: pure logic, no live deps. Repo: src/<ServiceName>.Tests
+            - INTEGRATION: real service wiring, real DB. Repo: src/<ServiceName>.IntegrationTests
+            - BACKEND_E2E: full API flows, real external deps. Repo: tests/backend-e2e/
+            - UI_E2E: true end-to-end customer journeys only. Preconditions via API not UI. Repo: tests/ui-e2e/
+            - COMPONENT: frontend rendering or state in isolation. Repo: src/components/
+            - MANUAL: real external hardware/services, exploratory, UX judgment
+
+            Key rules:
+            - NEVER use UI_E2E for rendering bugs or single-service checks
+            - Always name the specific method, endpoint, or scenario to automate
+            - Always include the repo path where the test should live
+            - Always state what still needs manual testing explicitly
+            - Unit tests are evaluated INDEPENDENTLY of the decision chain. Even when the primary layer is INTEGRATION or E2E, always ask: is there any business logic, validation rule, error handling, or guard method that can be tested in isolation with a mocked dependency? If yes, those are unit tests. Only skip unit tests for config-only changes, simple wiring with no logic, or pure pass-through methods. If skipping, state the reason explicitly.
 
             Use the Bash tool to run this exact command and nothing else:
             echo 'JSON_OUTPUT_START'
-            echo '{"primary_layer":"LAYER","primary_rationale":"...","decision_chain":["..."],"unit_tests":["..."],"automate":["..."],"manual":["..."],"deferred":"...","supporting":"...","skip":"..."}'
+            echo '{"primary_layer":"LAYER","primary_rationale":"one sentence","decision_chain":["Step 1 - Can unit tests cover it? YES/NO: reason from ticket","Step 2 - Real service wiring or DB needed? YES/NO: reason from ticket","Step 3 - Full customer journey spanning multiple systems? YES/NO: reason","Step 4 - Frontend rendering or state? YES/NO: reason","Step 5 - Real hardware or external service required? YES/NO: reason"],"unit_tests":["what to unit test and assert"],"supporting":"LAYER or None","skip":"LAYER - reason","automate":["scenario 1","scenario 2"],"manual":["item 1 or None"],"deferred":"None"}'
             echo 'JSON_OUTPUT_END'
-      - name: Print raw output
+
+            Rules for decision_chain:
+            - Apply each step in order - stop at first YES
+            - Each step must have a concrete YES or NO plus a specific reason from the ticket content only
+            - Do NOT reference any existing team decision, comments, or external input - reason only from the ticket description and decision logic
+            - The chain determines primary_layer only. Unit tests are always evaluated separately - do not let the stopping step suppress unit test identification.
+            - unit_tests, automate, manual, and decision_chain MUST always be JSON arrays. Never a plain string. If the value is None, write ["None"] not "None".
+
+            Replace the example values with your actual analysis. Keep all strings short - one sentence max per item. Output nothing except the three echo commands above.
+
+      - name: Post comment to Jira
+        env:
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          ISSUE_KEY: ${{ github.event.inputs.issue_key }}
+          # ── CONFIGURE THIS ──────────────────────────────────────────────────
+          JIRA_BASE_URL: "https://your-instance.atlassian.net"
+          AUTOMATION_FIELD_ID: "customfield_XXXXX"
+          # ────────────────────────────────────────────────────────────────────
         run: |
-          cat /home/runner/work/_temp/claude-execution-output.json || true
+          OUTPUT_FILE="/home/runner/work/_temp/claude-execution-output.json"
+
+          # Extract text between JSON_OUTPUT_START and JSON_OUTPUT_END markers
+          RAW=$(python3 -c "
+          import json, sys, re
+
+          with open('$OUTPUT_FILE') as f:
+              data = json.load(f)
+
+          texts = []
+          for item in data:
+              if item.get('type') == 'assistant':
+                  for block in item.get('message', {}).get('content', []):
+                      if block.get('type') == 'text':
+                          texts.append(block.get('text', ''))
+              elif item.get('type') == 'user':
+                  for block in item.get('message', {}).get('content', []):
+                      if isinstance(block, dict) and block.get('type') == 'tool_result':
+                          content = block.get('content', '')
+                          if isinstance(content, str):
+                              texts.append(content)
+                          elif isinstance(content, list):
+                              for c in content:
+                                  if isinstance(c, dict):
+                                      texts.append(c.get('text', ''))
+
+          full_text = '\n'.join(texts)
+
+          match = re.search(r'JSON_OUTPUT_START\s*\n(.*?)\nJSON_OUTPUT_END', full_text, re.DOTALL)
+          if match:
+              candidate = match.group(1).strip()
+          else:
+              match = re.search(r'\{[^{}]*\"primary_layer\"[^{}]*\}', full_text, re.DOTALL)
+              candidate = match.group(0).strip() if match else '{}'
+
+          try:
+              obj = json.loads(candidate)
+              print(candidate)
+          except:
+              print('{}')
+          ")
+
+          echo "Raw JSON: $RAW"
+
+          if [ "$RAW" = "{}" ] || [ -z "$RAW" ]; then
+            echo "ERROR: Could not extract JSON from Claude output"
+            exit 1
+          fi
+
+          # Parse scalar fields
+          PRIMARY=$(echo "$RAW" | jq -r '.primary_layer // "UNKNOWN"')
+          RATIONALE=$(echo "$RAW" | jq -r '.primary_rationale // ""')
+          SUPPORTING=$(echo "$RAW" | jq -r '.supporting // "None"')
+          SKIP=$(echo "$RAW" | jq -r '.skip // "None"')
+          DEFERRED=$(echo "$RAW" | jq -r '.deferred // "None"')
+
+          echo "Primary: $PRIMARY | Supporting: $SUPPORTING"
+
+          # Build ADF list items from arrays - written to temp files to avoid shell quoting issues
+          # Fallback to a placeholder item if the array is empty — Jira rejects bulletList with empty content
+          FALLBACK='[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"None"}]}]}]'
+
+          CHAIN=$(echo "$RAW" | jq -c '[if (.decision_chain|type)=="array" then .decision_chain[] else .decision_chain end | {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":.}]}]}]')
+          [ "$CHAIN" = "[]" ] || [ -z "$CHAIN" ] && CHAIN="$FALLBACK"
+          echo "$CHAIN" > /tmp/chain_items.json
+
+          UNIT=$(echo "$RAW" | jq -c '[if (.unit_tests|type)=="array" then .unit_tests[] else .unit_tests end | {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":.}]}]}]')
+          [ "$UNIT" = "[]" ] || [ -z "$UNIT" ] && UNIT="$FALLBACK"
+          echo "$UNIT" > /tmp/unit_items.json
+
+          AUTO=$(echo "$RAW" | jq -c '[if (.automate|type)=="array" then .automate[] else .automate end | {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":.}]}]}]')
+          [ "$AUTO" = "[]" ] || [ -z "$AUTO" ] && AUTO="$FALLBACK"
+          echo "$AUTO" > /tmp/automate_items.json
+
+          MANUAL_LIST=$(echo "$RAW" | jq -c '[if (.manual|type)=="array" then .manual[] else .manual end | {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":.}]}]}]')
+          [ "$MANUAL_LIST" = "[]" ] || [ -z "$MANUAL_LIST" ] && MANUAL_LIST="$FALLBACK"
+          echo "$MANUAL_LIST" > /tmp/manual_items.json
+
+          # Build the full ADF payload - all dynamic values passed via --arg / --argjson, no inline shell vars
+          jq -n \
+            --arg primary "$PRIMARY" \
+            --arg rationale "$RATIONALE" \
+            --arg supporting "$SUPPORTING" \
+            --arg skip "$SKIP" \
+            --arg deferred "$DEFERRED" \
+            --argjson chain_items "$(cat /tmp/chain_items.json)" \
+            --argjson unit_items "$(cat /tmp/unit_items.json)" \
+            --argjson automate_items "$(cat /tmp/automate_items.json)" \
+            --argjson manual_items "$(cat /tmp/manual_items.json)" \
+            '
+            {
+              "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {"type": "text", "text": "Automation Layer Adviser", "marks": [{"type": "strong"}]},
+                      {"type": "hardBreak"},
+                      {"type": "text", "text": "Triggered automatically — confirm or override via the Automation Required field", "marks": [{"type": "em"}]}
+                    ]
+                  },
+                  {"type": "rule"},
+                  {
+                    "type": "table",
+                    "attrs": {"isNumberColumnEnabled": false, "layout": "default"},
+                    "content": [
+                      {
+                        "type": "tableRow",
+                        "content": [
+                          {"type": "tableHeader", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Primary layer", "marks": [{"type": "strong"}]}]}]},
+                          {"type": "tableCell", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": $primary, "marks": [{"type": "strong"}]}]}]}
+                        ]
+                      },
+                      {
+                        "type": "tableRow",
+                        "content": [
+                          {"type": "tableHeader", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Rationale", "marks": [{"type": "strong"}]}]}]},
+                          {"type": "tableCell", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": $rationale}]}]}
+                        ]
+                      },
+                      {
+                        "type": "tableRow",
+                        "content": [
+                          {"type": "tableHeader", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Supporting", "marks": [{"type": "strong"}]}]}]},
+                          {"type": "tableCell", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": $supporting}]}]}
+                        ]
+                      },
+                      {
+                        "type": "tableRow",
+                        "content": [
+                          {"type": "tableHeader", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Skip", "marks": [{"type": "strong"}]}]}]},
+                          {"type": "tableCell", "attrs": {}, "content": [{"type": "paragraph", "content": [{"type": "text", "text": $skip}]}]}
+                        ]
+                      }
+                    ]
+                  },
+                  {"type": "rule"},
+                  {"type": "paragraph", "content": [{"type": "text", "text": "Decision chain", "marks": [{"type": "strong"}]}]},
+                  {"type": "bulletList", "content": $chain_items},
+                  {"type": "rule"},
+                  {"type": "paragraph", "content": [{"type": "text", "text": "Unit tests", "marks": [{"type": "strong"}]}]},
+                  {"type": "bulletList", "content": $unit_items},
+                  {"type": "paragraph", "content": [{"type": "text", "text": "What to automate", "marks": [{"type": "strong"}]}]},
+                  {"type": "bulletList", "content": $automate_items},
+                  {"type": "paragraph", "content": [{"type": "text", "text": "What still needs manual testing", "marks": [{"type": "strong"}]}]},
+                  {"type": "bulletList", "content": $manual_items},
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {"type": "text", "text": "Deferred coverage: ", "marks": [{"type": "strong"}]},
+                      {"type": "text", "text": $deferred}
+                    ]
+                  }
+                ]
+              }
+            }
+            ' > /tmp/jira_payload.json
+
+          echo "Posting to Jira: $ISSUE_KEY"
+
+          HTTP_CODE=$(curl -s \
+            -o /tmp/jira_response.json \
+            -w "%{http_code}" \
+            -X POST \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${ISSUE_KEY}/comment" \
+            -H "Authorization: Basic $(echo -n "${JIRA_EMAIL}:${JIRA_API_TOKEN}" | base64 -w 0)" \
+            -H "Content-Type: application/json" \
+            -d "@/tmp/jira_payload.json")
+
+          echo "Jira HTTP status: $HTTP_CODE"
+          cat /tmp/jira_response.json
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "[OK] Comment posted successfully to ${ISSUE_KEY}"
+          else
+            echo "[FAIL] Failed to post comment. HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          # Update Automation Required field based on primary layer
+          # Yes: INTEGRATION, BACKEND_E2E, UI_E2E, COMPONENT
+          # No: MANUAL
+          # UNIT: leave unchanged
+          if [ "$PRIMARY" = "INTEGRATION" ] || [ "$PRIMARY" = "BACKEND_E2E" ] || [ "$PRIMARY" = "UI_E2E" ] || [ "$PRIMARY" = "COMPONENT" ]; then
+            AUTOMATION_REQUIRED_VALUE="Yes"
+          elif [ "$PRIMARY" = "MANUAL" ]; then
+            AUTOMATION_REQUIRED_VALUE="No"
+          else
+            AUTOMATION_REQUIRED_VALUE=""
+          fi
+
+          if [ -n "$AUTOMATION_REQUIRED_VALUE" ]; then
+            echo "Setting Automation Required = $AUTOMATION_REQUIRED_VALUE on ${ISSUE_KEY}"
+
+            FIELD_PAYLOAD="{\"fields\":{\"${AUTOMATION_FIELD_ID}\":{\"value\":\"${AUTOMATION_REQUIRED_VALUE}\"}}}"
+
+            FIELD_HTTP_CODE=$(curl -s \
+              -o /tmp/jira_field_response.json \
+              -w "%{http_code}" \
+              -X PUT \
+              "${JIRA_BASE_URL}/rest/api/3/issue/${ISSUE_KEY}" \
+              -H "Authorization: Basic $(echo -n "${JIRA_EMAIL}:${JIRA_API_TOKEN}" | base64 -w 0)" \
+              -H "Content-Type: application/json" \
+              -d "$FIELD_PAYLOAD")
+
+            echo "Jira field update HTTP status: $FIELD_HTTP_CODE"
+            cat /tmp/jira_field_response.json
+
+            if [ "$FIELD_HTTP_CODE" = "204" ]; then
+              echo "[OK] Automation Required set to ${AUTOMATION_REQUIRED_VALUE} on ${ISSUE_KEY}"
+            else
+              echo "[WARN] Could not update Automation Required field. HTTP $FIELD_HTTP_CODE"
+              # Non-fatal — comment was already posted successfully
+            fi
+          else
+            echo "[SKIP] Primary layer is UNIT — Automation Required field left unchanged"
+          fi
