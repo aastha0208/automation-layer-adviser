@@ -4,6 +4,23 @@ A Claude Code-powered GitHub Actions workflow that analyses Jira tickets and rec
 
 ---
 
+## Quick start (2 minutes)
+
+1. **Fork this repo** (or use it as a template)
+2. **Add 3 secrets** to your fork (Settings → Secrets and variables → Actions):
+   - `CLAUDE_CODE_OAUTH_TOKEN` — [Get from Anthropic](https://claude.ai/account/settings/auth)
+   - `JIRA_EMAIL` — Your Jira account email
+   - `JIRA_API_TOKEN` — [Generate here](https://id.atlassian.com/manage-profile/security/api-tokens)
+3. **Update 2 values** in `.github/workflows/automation-layer-adviser.yml` (lines 159–160):
+   - `JIRA_BASE_URL` — Your Jira instance URL
+   - `AUTOMATION_FIELD_ID` — Your custom field ID (see [Setup §3](#3--configure-your-jira-instance))
+4. **Test it** — Go to Actions → Automation Layer Adviser → Run workflow → fill in a ticket
+5. **See the recommendation** posted as a comment on your Jira ticket
+
+That's it. Cost: ~$0.01 per recommendation (Claude Sonnet pricing).
+
+---
+
 ## The problem
 
 When does your team decide what layer to automate a ticket at?
@@ -38,6 +55,37 @@ Every comment contains:
 - **What still needs manual testing** — never left blank
 - **Deferred coverage** — anything blocked by missing infrastructure
 
+Example Jira comment (as Atlassian Document Format):
+
+```
+Automation Layer Adviser
+
+Primary layer       INTEGRATION
+Rationale           Real user repository access requires live database connection
+Supporting          Deferred UI_E2E for full auth flow pending test environment setup
+Skip                Okta directory service validation (requires 2FA)
+
+Decision chain
+• Step 1 - Can unit tests cover it? NO: Business logic depends on real user repository queries
+• Step 2 - Real service wiring or DB? YES: Auth service calls real user repo, cache, and audit DB
+• Step 3 - Full customer journey? NO: Single service responsibility, not cross-system
+
+Unit tests
+• User lookup by email (positive case)
+• User lookup by email (not found case)
+• Username collision detection
+
+What to automate
+• AuthService.AuthenticateUser() with seeded user data via Testcontainers (src/AuthService.IntegrationTests)
+• AuthService.UpdateLastLogin() with real audit log writes
+• Cache invalidation on password change
+
+What still needs manual testing
+• Multi-factor authentication (2FA) flows with real Okta
+• Account lockout after failed attempts (rate limiting)
+• SAML federation with external IdP
+```
+
 ---
 
 ## Test layers
@@ -51,7 +99,7 @@ Every comment contains:
 | `COMPONENT` | Frontend rendering or state in isolation |
 | `MANUAL` | Real hardware, external directory services, exploratory, UX judgment |
 
-The adviser always defaults to the lowest appropriate layer.
+The adviser always defaults to the **lowest appropriate layer**.
 
 ---
 
@@ -78,7 +126,7 @@ Structured JSON output parsed
       └──▶ "Automation Required" field updated
 ```
 
-Claude is called via the official [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action). The decision framework is passed as a prompt — Claude reasons through it fresh for every ticket. Nothing is hardcoded.
+Claude is called via the official [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action). The decision framework is passed as a prompt — Claude reasons through it from first principles using only the ticket content.
 
 ---
 
@@ -92,20 +140,25 @@ Go to **Settings → Secrets and variables → Actions** and add:
 
 | Secret | Description |
 |---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Anthropic Claude Code OAuth token |
+| `CLAUDE_CODE_OAUTH_TOKEN` | [Anthropic Claude Code OAuth token](https://claude.ai/account/settings/auth) |
 | `JIRA_EMAIL` | Your Jira account email |
-| `JIRA_API_TOKEN` | Your Jira API token ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
+| `JIRA_API_TOKEN` | [Generate here](https://id.atlassian.com/manage-profile/security/api-tokens) |
 
 ### 3 — Configure your Jira instance
 
-In `.github/workflows/automation-layer-adviser.yml`, update the env block:
+In `.github/workflows/automation-layer-adviser.yml`, update the env block (around line 159):
 
 ```yaml
 JIRA_BASE_URL: "https://your-instance.atlassian.net"
 AUTOMATION_FIELD_ID: "customfield_XXXXX"
 ```
 
-To find your `AUTOMATION_FIELD_ID`: go to any Jira ticket → add `?expand=renderedFields,names` to the URL → search for your field name in the JSON.
+**To find your `AUTOMATION_FIELD_ID`:**
+1. Open any Jira ticket in your project
+2. Add `?expand=renderedFields,names` to the URL
+3. Open browser DevTools → Network tab
+4. Look at the response JSON for your field name (e.g. `"Automation Required"`)
+5. Find its `id` — it will look like `customfield_10042`
 
 ### 4 — Trigger manually (test it)
 
@@ -149,6 +202,8 @@ The prompt in the workflow contains the full decision framework. To adapt it to 
 - Add team-specific rules under "Key rules"
 - Add worked examples to the prompt to improve accuracy on edge cases (few-shot prompting)
 
+See `.github/workflows/automation-layer-adviser.yml` lines 97–150.
+
 ---
 
 ## Why the layer matters
@@ -163,13 +218,36 @@ Over-testing at the wrong layer is as much a problem as under-testing.
 
 ---
 
+## Troubleshooting
+
+### Workflow runs but no comment appears on Jira
+
+1. Check the Actions log for error messages
+2. Verify `JIRA_API_TOKEN` is still valid (tokens expire)
+3. Confirm `AUTOMATION_FIELD_ID` matches your Jira instance
+4. Check Jira instance URL is correct (typos in `JIRA_BASE_URL`)
+
+### "Could not extract JSON from Claude output"
+
+This means Claude didn't follow the schema. Check the Actions log for Claude's raw response:
+- Look for the step "Post comment to Jira"
+- If frequent, try adding a worked example to the prompt (lines 97–150 of the workflow)
+
+### Recommendations seem off for my domain
+
+The decision framework is generic — it works well for most software engineering tickets but may need tuning for specialized domains (hardware, data pipelines, etc.).
+
+**Solution:** Edit the decision framework in `.github/workflows/automation-layer-adviser.yml` (lines 97–150) to add your domain-specific rules and examples.
+
+---
+
 ## Design decisions
 
 **Why GitHub Actions and not a Jira-native solution?**
 Jira automation rules can call webhooks but can't run AI inference. GitHub Actions provides the compute, secrets management, and audit trail needed to run Claude reliably.
 
 **Why structured JSON output?**
-Claude is non-deterministic. Requiring a specific JSON schema with markers makes the output parseable regardless of how Claude phrases its reasoning. Defensive jq transforms handle edge cases where Claude returns a string instead of an array.
+Claude is non-deterministic. Requiring a specific JSON schema with markers makes the output parseable regardless of how Claude phrases its reasoning. Defensive jq transforms handle edge cases where Claude's response varies.
 
 **Why post to Jira as a comment rather than updating fields directly?**
 The comment is visible to the whole team, shows the full reasoning chain, and is easy to override. Field updates alone don't explain why — the comment does.
@@ -192,10 +270,10 @@ For production use, replace `JIRA_EMAIL` and `JIRA_API_TOKEN` with a dedicated s
 
 ## Limitations
 
-- Recommendation quality depends on ticket content — thin tickets with no description or AC produce weaker recommendations
-- Claude is non-deterministic — the same ticket may produce slightly different output on different runs
-- Third-party integrations (Okta, AD, external identity providers) sometimes over-trigger MANUAL — the framework benefits from team-specific rules for these scenarios
-- Comments post under whichever Jira account the API token belongs to
+- **Recommendation quality depends on ticket content** — thin tickets with no description or acceptance criteria produce weaker recommendations. Keep tickets detailed.
+- **Claude is non-deterministic** — the same ticket may produce slightly different output on different runs (though the primary layer usually stays consistent).
+- **Third-party integrations over-trigger MANUAL** — Okta, Active Directory, and external identity providers sometimes recommend MANUAL even when automation is possible. Update the decision framework with team-specific rules for these scenarios.
+- **Comments post under the API token's account** — use a dedicated service account for cleaner audit trails.
 
 ---
 
