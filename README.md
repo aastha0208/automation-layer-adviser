@@ -44,47 +44,22 @@ No prompt. No copy-paste. No one needing to remember.
 
 ---
 
-## What the recommendation looks like
+## Real example
 
-Every comment contains:
+Here's what the Automation Layer Adviser recommendation looks like on a real Jira ticket:
 
-- **Primary layer** — the correct test layer with a one-sentence rationale
-- **Decision chain** — five-step YES/NO reasoning, grounded in the ticket content
-- **Unit tests** — evaluated independently of the decision chain, even when the primary layer is Integration or E2E
-- **What to automate** — specific scenarios with repo paths
-- **What still needs manual testing** — never left blank
-- **Deferred coverage** — anything blocked by missing infrastructure
+![Automation Layer Adviser Jira comment - real example](https://github.com/aastha0208/test-strategy-adviser/raw/main/docs/example-recommendation.png)
 
-Example Jira comment (as Atlassian Document Format):
+**What you see in the comment:**
 
-```
-Automation Layer Adviser
-
-Primary layer       INTEGRATION
-Rationale           Real user repository access requires live database connection
-Supporting          Deferred UI_E2E for full auth flow pending test environment setup
-Skip                Okta directory service validation (requires 2FA)
-
-Decision chain
-• Step 1 - Can unit tests cover it? NO: Business logic depends on real user repository queries
-• Step 2 - Real service wiring or DB? YES: Auth service calls real user repo, cache, and audit DB
-• Step 3 - Full customer journey? NO: Single service responsibility, not cross-system
-
-Unit tests
-• User lookup by email (positive case)
-• User lookup by email (not found case)
-• Username collision detection
-
-What to automate
-• AuthService.AuthenticateUser() with seeded user data via Testcontainers (src/AuthService.IntegrationTests)
-• AuthService.UpdateLastLogin() with real audit log writes
-• Cache invalidation on password change
-
-What still needs manual testing
-• Multi-factor authentication (2FA) flows with real Okta
-• Account lockout after failed attempts (rate limiting)
-• SAML federation with external IdP
-```
+- **Primary layer: UNIT** — The recommendation at a glance
+- **Rationale** — One sentence explaining why this layer fits the ticket
+- **Supporting** — Additional layers recommended as supporting coverage (in this example: INTEGRATION)
+- **Skip** — Layers explicitly ruled out and why (in this example: BACKEND_E2E and UI_E2E for a single-transform fix)
+- **Decision chain** — Five-step YES/NO reasoning grounded in the ticket content:
+  - Step 1: Can unit tests cover it? Analysis of whether this is pure logic testable in isolation
+  - Step 2: Does it need real service wiring or DB? If yes, stops here; if no, continues
+- The comment is formatted, clear, and immediately actionable for the engineer
 
 ---
 
