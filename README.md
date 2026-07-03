@@ -4,9 +4,9 @@
 > - 🤖 **test-strategy-adviser** (you are here) — the agent: a GitHub Action that recommends test-automation layers for engineering tickets.
 > - 🧪 [**prompt-eval-gate**](https://github.com/aastha0208/prompt-eval-gate) — the evaluation system that keeps this agent honest: scores every prompt change against a labelled dataset, blocks regressions in CI, and grows the dataset from human corrections.
 
-A Claude Code-powered GitHub Actions workflow that analyses Jira tickets and recommends the correct test automation layers automatically, every time a ticket is ready to be worked on.
+The Automation Layer Adviser is a Claude Code-powered GitHub Actions workflow that analyses Jira tickets and recommends the correct test automation layers automatically, every time a ticket is ready to be worked on.
 
-> **Shift-left automation decisions with AI.** When a Jira ticket reaches Ready, Claude analyzes it and recommends the exact test layer to automate—posted as a comment, grounded in your team's framework, with no manual intervention required.
+> **Shift-left automation decisions with AI.** When an engineering ticket transitions to Ready state (ready for a sprint), Claude analyzes it and recommends the exact test layer to automate—posted as a comment, grounded in the decision framework aligned to products or teams' established automation guidelines, with no manual intervention required.
 
 ---
 
