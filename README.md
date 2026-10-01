@@ -1,10 +1,8 @@
 # Automation Layer Adviser
 
-> **Related repos** — This is one half of a two-repo project:
-> - 🤖 **automation-layer-adviser** (you are here) — the agent: a GitHub Action that recommends test-automation layers for engineering tickets.
-> - 🧪 [**prompt-eval-gate**](https://github.com/aastha0208/prompt-eval-gate) — the evaluation system that keeps the adviser agent honest: scores every prompt change against a labelled dataset, blocks regressions in CI, and grows the dataset from human corrections.
+**AI decision support for choosing the right test-automation layer.** A Claude-powered GitHub Actions workflow that reads each Jira ticket when it reaches Ready and recommends which layer to automate it at, with a clear rationale grounded in the team's own engineering guidelines.
 
-The Automation Layer Adviser is a Claude Code-powered GitHub Actions workflow that analyses Jira tickets and recommends the correct test automation layers automatically, every time a ticket is ready to be worked on.
+Its quality is guarded by a companion repo: [Prompt Eval Gate](https://github.com/aastha0208/prompt-eval-gate) scores every change to this agent's prompt against a labelled dataset and blocks changes that make its recommendations worse.
 
 > **Shift-left automation decisions with AI.** When an engineering ticket transitions to Ready state (ready for a sprint), Claude analyzes it and recommends the exact test layer to automate—posted as a comment, grounded in the decision framework aligned to products or teams' established automation guidelines, with no manual intervention required.
 
@@ -53,7 +51,7 @@ No prompt. No copy-paste. No one needing to remember.
 
 Here's what the Automation Layer Adviser recommendation looks like on a real Jira ticket:
 
-![Automation Layer Adviser Jira comment - real example](https://github.com/aastha0208/test-strategy-adviser/blob/main/JIRA%20example%20with%20Test%20Adviser.png)
+![Automation Layer Adviser Jira comment - real example](JIRA%20example%20with%20Test%20Adviser.png)
 
 **What you see in the comment:**
 
